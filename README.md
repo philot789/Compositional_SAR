@@ -1,7 +1,7 @@
 Spatiotemporal Modeling of Regional Compositional Dynamics
 
 This repository contains the data and code accompanying the manuscript:
-“Modeling Regional Compositional Dynamics Using a Spatiotemporal Multivariate Autoregressive Framework” (submitted to JASA Applications and Case Studies).
+“Modeling Regional Compositional Dynamics Using a Spatiotemporal Multivariate Autoregressive Framework”.
 
 Overview
 
