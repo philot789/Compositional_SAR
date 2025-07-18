@@ -1,0 +1,386 @@
+---
+title: "Monte Carlo Simulation Study"
+author: "Philipp Otto"
+format: html
+editor: visual
+---
+
+## MC Simulation Multivariate SAR Process
+
+### Load functions and setup parameters
+
+```{r}
+source("Functions.R")
+```
+
+```{r}
+
+library("Rsolnp")
+library("spdep")
+
+N <- c(4^2, 6^2, 8^2) # number of spatial locations
+T <- c(20, 80, 160) # number of time points
+p <- 2 # number of response variables
+k <- 3 # number of regressors (including 1 intercept parameter)
+
+m <- 10 # number of replications
+
+# Model A
+Beta   <- array(c(1, -2, 3, 2, 1, -2), dim = c(k,p))
+Psi_A  <- matrix(c(0.2, 0, 0.2, 0), 2, 2)
+Pi_A   <- matrix(c(0.6, 0.2, 0.3, 0.6), 2, 2)
+# Model B
+Psi_B  <- matrix(c(0.7, 0.1, 0.2, 0.7), 2, 2)
+Pi_B   <- matrix(c(0.1, 0.2, 0.1, 0.1), 2, 2)
+
+## some tests
+
+# nb <- cell2nb(5, 5, type = "rook")
+# W  <- nb2mat(nb, style = "W")
+
+# sim_out <- simulate_spatiotemporal_multivariate_p(n = 25, p, t = 50, k, W, Psi_B, Pi_B, Beta, sig_eps = 1)
+# 
+# sd(sim_out$Y)
+# 
+# output_qml <- qml_spatiotemporal_multivariate_p(sim_out$Y, W, sim_out$X)  # needs n x p x t
+# 
+# output_qml$Psi_est
+# Psi_B
+# 
+# output_qml$Pi_est
+# Pi_B
+# 
+# output_qml$sig_u_est
+# 
+# output_qml$Beta_est
+# Beta
+# 
+# output_qml$pars_est / sqrt(diag(solve(output_qml$H)))
+
+```
+
+## Simulation study
+
+```{r}
+
+library("parallel")
+library("Rsolnp")
+library("doParallel")
+library("Matrix")
+
+diff_pars <- array(NA, dim = c(m, p^2 + p^2 + k*p + 1 + 2, (length(N)*length(T))*2)) # replications, parameters, settings (4 * (Setting A and B))
+settings  <- array(NA, dim = c(3, (length(N)*length(T))*2))
+
+n.cores <- parallel::detectCores() - 2
+n.cores
+
+vec <- function(x){
+    return(as.vector(x))
+}
+
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "FORK"
+  )
+
+doParallel::registerDoParallel(cl = my.cluster)
+# check if it is registered (optional)
+foreach::getDoParRegistered()
+
+counter <- 1
+for(setting in c("B")){
+  if(setting == "A"){
+    Psi <- Psi_A
+    Pi  <- Pi_A
+  } else if (setting == "B"){
+    Psi <- Psi_B
+    Pi  <- Pi_B
+  }
+  for(n in N){
+    
+    nb <- cell2nb(round(sqrt(n),0), round(sqrt(n),0), type = "rook")
+    W  <- nb2mat(nb, style = "W")
+
+    for(t in T){
+      
+      foo <- foreach(
+        i = 1:m,
+        .combine = 'rbind'
+      ) %dopar% {
+
+        set.seed(i*counter + counter*m)
+        sim_out <- simulate_spatiotemporal_multivariate_p(n = n, p, t = t, k, W, Psi_B, Pi_B, Beta, sig_eps = 1)
+        output_qml <- qml_spatiotemporal_multivariate_p(sim_out$Y, W, sim_out$X)  # needs n x p x t
+
+        c(output_qml$pars_est - c(vec(Psi), vec(Pi), vec(Beta), 1), output_qml$n, output_qml$t)
+
+      }
+      
+      # foo <- NULL
+      # for(i in 1:m){
+      # 
+      #   set.seed(i)
+      #   sim_out <- simulate_spatiotemporal_multivariate_p(n = n, p, t = t, k, W, Psi_B, Pi_B, Beta, sig_eps = 1)
+      #   output_qml <- qml_spatiotemporal_multivariate_p(sim_out$Y, W, sim_out$X)  # needs n x p x t
+      # 
+      #   foo <- rbind(foo, output_qml$pars_est - c(vec(Psi), vec(Pi), vec(Beta), 1))
+      # 
+      # }
+      
+      
+      diff_pars[, , counter] <- foo
+        
+      settings[, counter] <- c(n, t, setting)
+      
+      cat(counter, " ")
+      
+      counter <- counter + 1
+
+    }
+  }
+}
+
+
+stopCluster(my.cluster)
+
+```
+
+## Analysis of the results
+
+```{r}
+
+BIAS <- apply(diff_pars, c(2,3), mean)
+
+RMSE <- apply(diff_pars, c(2,3), function(x) sqrt(mean(x^2)))
+
+# MAE <- apply(diff_pars, c(2,3), function(x) median(abs(x)))
+
+
+settings
+
+RMSE
+
+par(mfcol = c(2,2))
+
+settings
+
+# pdf("Psi_t.pdf", width = 8.09, height = 5)
+plot(T, RMSE[1,1:length(T)], type = "l", ylim = range(RMSE[1:4,], na.rm = TRUE), main = "Psi (across t)", ylab = "RMSE", col = "orange")
+lines(T, apply(RMSE[1:4,1:length(T)],2,mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(T, apply(RMSE[1:4,(length(T)+1):(2*length(T))],2,mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(T, apply(RMSE[1:4,(2*length(T)+1):(3*length(T))],2,mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(T, RMSE[1,(length(T)+1):(2*length(T))], type = "l", col = "orange", lty = 2)
+lines(T, RMSE[1,(2*length(T)+1):(3*length(T))], type = "l", col = "orange", lty = 3)
+lines(T, RMSE[2,1:length(T)], type = "l", col = "blue")
+lines(T, RMSE[2,(length(T)+1):(2*length(T))], type = "l", col = "blue", lty = 2)
+lines(T, RMSE[2,(2*length(T)+1):(3*length(T))], type = "l", col = "blue", lty = 3)
+lines(T, RMSE[3,1:length(T)], type = "l", col = "darkgreen")
+lines(T, RMSE[3,(length(T)+1):(2*length(T))], type = "l", col = "darkgreen", lty = 2)
+lines(T, RMSE[3,(2*length(T)+1):(3*length(T))], type = "l", col = "darkgreen", lty = 3)
+lines(T, RMSE[4,1:length(T)], type = "l", col = "red")
+lines(T, RMSE[4,(length(T)+1):(2*length(T))], type = "l", col = "red", lty = 2)
+lines(T, RMSE[4,(2*length(T)+1):(3*length(T))], type = "l", col = "red", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("n =", N[1]), paste("n =", N[2]), paste("n =", N[3])))
+# dev.off()
+
+# pdf("Psi_n.pdf", width = 8.09, height = 5)
+plot(N, RMSE[1,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "orange", ylim = range(RMSE[1:4,], na.rm = TRUE), main = "Psi (across n)", ylab = "RMSE")
+lines(N, apply(RMSE[1:4,seq(1, length(N)*length(T), by = length(T))], 2, mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(N, apply(RMSE[1:4,seq(1, length(N)*length(T), by = length(T)) + 1], 2, mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(N, apply(RMSE[1:4,seq(1, length(N)*length(T), by = length(T)) + 2], 2, mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(N, RMSE[1,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "orange", lty = 2)
+lines(N, RMSE[1,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "orange", lty = 3)
+lines(N, RMSE[2,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "blue")
+lines(N, RMSE[2,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "blue", lty = 2)
+lines(N, RMSE[2,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "blue", lty = 3)
+lines(N, RMSE[3,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "darkgreen")
+lines(N, RMSE[3,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "darkgreen", lty = 2)
+lines(N, RMSE[3,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "darkgreen", lty = 3)
+lines(N, RMSE[4,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "red")
+lines(N, RMSE[4,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "red", lty = 2)
+lines(N, RMSE[4,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "red", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("T =", T[1]), paste("T =", T[2]), paste("T =", T[3])))
+# dev.off()
+
+# pdf("Pi_t.pdf", width = 8.09, height = 5)
+plot(T, RMSE[5,1:length(T)], type = "l", ylim = range(RMSE[5:8,], na.rm = TRUE), main = "Pi (across t)", ylab = "RMSE", col = "orange")
+lines(T, apply(RMSE[5:8,1:length(T)],2,mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(T, apply(RMSE[5:8,(length(T)+1):(2*length(T))],2,mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(T, apply(RMSE[5:8,(2*length(T)+1):(3*length(T))],2,mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(T, RMSE[5,(length(T)+1):(2*length(T))], type = "l", col = "orange", lty = 2)
+lines(T, RMSE[5,(2*length(T)+1):(3*length(T))], type = "l", col = "orange", lty = 3)
+lines(T, RMSE[6,1:length(T)], type = "l", col = "blue")
+lines(T, RMSE[6,(length(T)+1):(2*length(T))], type = "l", col = "blue", lty = 2)
+lines(T, RMSE[6,(2*length(T)+1):(3*length(T))], type = "l", col = "blue", lty = 3)
+lines(T, RMSE[7,1:length(T)], type = "l", col = "darkgreen")
+lines(T, RMSE[7,(length(T)+1):(2*length(T))], type = "l", col = "darkgreen", lty = 2)
+lines(T, RMSE[7,(2*length(T)+1):(3*length(T))], type = "l", col = "darkgreen", lty = 3)
+lines(T, RMSE[8,1:length(T)], type = "l", col = "red")
+lines(T, RMSE[8,(length(T)+1):(2*length(T))], type = "l", col = "red", lty = 2)
+lines(T, RMSE[8,(2*length(T)+1):(3*length(T))], type = "l", col = "red", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("n =", N[1]), paste("n =", N[2]), paste("n =", N[3])))
+# dev.off()
+
+# pdf("Pi_n.pdf", width = 8.09, height = 5)
+plot(N, RMSE[5,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "orange", ylim = range(RMSE[5:8,], na.rm = TRUE), main = "Pi (across n)", ylab = "RMSE")
+lines(N, apply(RMSE[5:8,seq(1, length(N)*length(T), by = length(T))], 2, mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(N, apply(RMSE[5:8,seq(1, length(N)*length(T), by = length(T)) + 1], 2, mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(N, apply(RMSE[5:8,seq(1, length(N)*length(T), by = length(T)) + 2], 2, mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(N, RMSE[5,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "orange", lty = 2)
+lines(N, RMSE[5,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "orange", lty = 3)
+lines(N, RMSE[6,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "blue")
+lines(N, RMSE[6,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "blue", lty = 2)
+lines(N, RMSE[6,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "blue", lty = 3)
+lines(N, RMSE[7,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "darkgreen")
+lines(N, RMSE[7,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "darkgreen", lty = 2)
+lines(N, RMSE[7,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "darkgreen", lty = 3)
+lines(N, RMSE[8,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "red")
+lines(N, RMSE[8,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "red", lty = 2)
+lines(N, RMSE[8,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "red", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("T =", T[1]), paste("T =", T[2]), paste("T =", T[3])))
+# dev.off()
+
+# Regression parameters
+
+# pdf("B_t.pdf", width = 8.09, height = 5)
+plot(T, RMSE[9,1:length(T)], type = "l", ylim = range(RMSE[9:14,], na.rm = TRUE), main = "B (across t)", ylab = "RMSE", col = "grey")
+lines(T, apply(RMSE[9:14,1:length(T)],2,mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(T, apply(RMSE[9:14,(length(T)+1):(2*length(T))],2,mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(T, apply(RMSE[9:14,(2*length(T)+1):(3*length(T))],2,mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(T, RMSE[9,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[9,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+lines(T, RMSE[10,1:length(T)], type = "l", col = "grey")
+lines(T, RMSE[10,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[10,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+lines(T, RMSE[11,1:length(T)], type = "l", col = "grey")
+lines(T, RMSE[11,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[11,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+lines(T, RMSE[12,1:length(T)], type = "l", col = "grey")
+lines(T, RMSE[12,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[12,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+lines(T, RMSE[13,1:length(T)], type = "l", col = "grey")
+lines(T, RMSE[13,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[13,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+lines(T, RMSE[14,1:length(T)], type = "l", col = "grey")
+lines(T, RMSE[14,(length(T)+1):(2*length(T))], type = "l", col = "grey", lty = 2)
+lines(T, RMSE[14,(2*length(T)+1):(3*length(T))], type = "l", col = "grey", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("n =", N[1]), paste("n =", N[2]), paste("n =", N[3])))
+# dev.off()
+
+# pdf("B_n.pdf", width = 8.09, height = 5)
+plot(N, RMSE[9,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "darkgrey", ylim = range(RMSE[9:14,], na.rm = TRUE), main = "B (across n)", ylab = "RMSE")
+lines(N, apply(RMSE[9:14,seq(1, length(N)*length(T), by = length(T))], 2, mean), type = "b", col = "black", lty = 1, lwd = 2)
+lines(N, apply(RMSE[9:14,seq(1, length(N)*length(T), by = length(T)) + 1], 2, mean), type = "b", col = "black", lty = 2, lwd = 2)
+lines(N, apply(RMSE[9:14,seq(1, length(N)*length(T), by = length(T)) + 2], 2, mean), type = "b", col = "black", lty = 3, lwd = 2)
+lines(N, RMSE[9,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "darkgrey", lty = 2)
+lines(N, RMSE[9,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "darkgrey", lty = 3)
+lines(N, RMSE[10,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "grey")
+lines(N, RMSE[10,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "grey", lty = 2)
+lines(N, RMSE[10,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "grey", lty = 3)
+lines(N, RMSE[11,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "grey")
+lines(N, RMSE[11,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "grey", lty = 2)
+lines(N, RMSE[11,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "grey", lty = 3)
+lines(N, RMSE[12,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "grey")
+lines(N, RMSE[12,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "grey", lty = 2)
+lines(N, RMSE[12,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "grey", lty = 3)
+lines(N, RMSE[13,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "grey")
+lines(N, RMSE[13,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "grey", lty = 2)
+lines(N, RMSE[13,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "grey", lty = 3)
+lines(N, RMSE[14,seq(1, length(N)*length(T), by = length(T))], type = "l", col = "grey")
+lines(N, RMSE[14,seq(1, length(N)*length(T), by = length(T)) + 1], type = "l", col = "grey", lty = 2)
+lines(N, RMSE[14,seq(1, length(N)*length(T), by = length(T)) + 2], type = "l", col = "grey", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("T =", T[1]), paste("T =", T[2]), paste("T =", T[3])))
+# dev.off()
+
+# Error variance
+
+# pdf("sigma_t.pdf", width = 8.09, height = 5)
+plot(T, RMSE[15,1:length(T)], type = "b", ylim = range(RMSE[15,], na.rm = TRUE), main = "sigma_eps (across t)", ylab = "RMSE", col = "black")
+lines(T, RMSE[15,(length(T)+1):(2*length(T))], type = "b", col = "black", lty = 2)
+lines(T, RMSE[15,(2*length(T)+1):(3*length(T))], type = "b", col = "black", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("n =", N[1]), paste("n =", N[2]), paste("n =", N[3])))
+# dev.off()
+
+# pdf("sigma_n.pdf", width = 8.09, height = 5)
+plot(N, RMSE[15,seq(1, length(N)*length(T), by = length(T))], type = "b", col = "black", ylim = range(RMSE[15,], na.rm = TRUE), main = "sigma_eps (across n)", ylab = "RMSE")
+lines(N, RMSE[15,seq(1, length(N)*length(T), by = length(T)) + 1], type = "b", col = "black", lty = 2)
+lines(N, RMSE[15,seq(1, length(N)*length(T), by = length(T)) + 2], type = "b", col = "black", lty = 3)
+legend("topright", lty = c(1,2,3), legend = c(paste("T =", T[1]), paste("T =", T[2]), paste("T =", T[3])))
+# dev.off()
+
+
+RMSE[,1] - RMSE[,2] > 0
+RMSE[,3] - RMSE[,4] > 0
+RMSE[,1] - RMSE[,4] > 0
+```
+
+## Simulation with compositions
+
+```{r}
+
+library("spdep")
+library("Rsolnp")
+library("compositions")
+
+data_spatial_temp <- readRDS("SimsCodaFct/data_spatial_temp.rds")
+
+data_spatial_temp$n_id <- numeric(nrow(data_spatial_temp))
+
+locations <- cbind(1:47, unique(cbind(data_spatial_temp$x, data_spatial_temp$y)))
+
+for(i in 1:nrow(data_spatial_temp)){
+  data_spatial_temp[i,]$n_id <- locations[which(locations[,2] == data_spatial_temp[i,]$x & locations[,3] == data_spatial_temp[i,]$y), 1]
+}
+
+n <- 47
+t <- 15
+p <- 6
+
+array_compositions <- array(NA, dim = c(n, t, p))
+ilr_array_compositions <- array(NA, dim = c(n, t, p-1))
+
+for(i.n in 1:n){
+  for(i.t in 1:t){
+    array_compositions[i.n, i.t, ] <- as.numeric(data_spatial_temp[which(data_spatial_temp$t == i.t & data_spatial_temp$n_id == i.n), 5:10])
+    ilr_array_compositions[i.n, i.t, ] <- ilr(as.numeric(data_spatial_temp[which(data_spatial_temp$t == i.t & data_spatial_temp$n_id == i.n), 5:10]))
+    # print(ilr(as.numeric(data_spatial_temp[which(data_spatial_temp$t == i.t & data_spatial_temp$n_id == i.n), 5:10])))
+  }
+}
+
+
+# index <- 270
+# data_spatial_temp[index, 5:10]
+# ilr(data_spatial_temp[index, 5:10], V = ilrBase(D = 6, method = "balanced"))
+# ilrBase(data_spatial_temp[index, 5:10])
+# ilrBase(D = 6, method = "balanced")
+
+
+ilr_array_compositions2 <- apply(array_compositions, c(1,2), ilr, V = ilrBase(D = 6, method = "basic"))
+all(ilr_array_compositions == aperm(ilr_array_compositions2, c(2,3,1)))
+
+# Knn matrix
+
+W <- nb2mat(knn2nb(knearneigh(locations[,c(2,3)], k = 4)), style = "W")
+ 
+Y_ilr <- aperm(ilr_array_compositions2, c(2,1,3)) # change order of dimensions of array to use it in qml function
+
+
+output_qml <- qml_spatiotemporal_multivariate_p(Y_ilr, W, array(1, dim = c(n, p-1, t, 1)))  # needs n x p x t
+
+stderr <- sqrt(diag(solve(output_qml$H)))
+
+cbind(as.vector(output_qml$Beta_est),
+stderr[1:length(as.vector(output_qml$Beta_est))],
+as.vector(output_qml$Beta_est) / stderr[1:length(as.vector(output_qml$Beta_est))])
+
+round(
+cbind(as.vector(output_qml$Psi_est),
+stderr[(length(as.vector(output_qml$Beta_est))+1):(length(as.vector(output_qml$Psi_est)) + length(as.vector(output_qml$Beta_est)))],
+as.vector(output_qml$Psi_est) / stderr[(length(as.vector(output_qml$Beta_est))+1):(length(as.vector(output_qml$Psi_est)) + length(as.vector(output_qml$Beta_est)))]), 3)
+
+round(
+cbind(as.vector(output_qml$Pi_est),
+stderr[(length(as.vector(output_qml$Beta_est)) + length(as.vector(output_qml$Psi_est)) + 1):(length(as.vector(output_qml$Beta_est)) + length(as.vector(output_qml$Psi_est)) + length(as.vector(output_qml$Pi_est)))],
+as.vector(output_qml$Pi_est) / stderr[(length(as.vector(output_qml$Beta_est)) + length(as.vector(output_qml$Psi_est)) + 1):(length(as.vector(output_qml$Beta_est)) + length(as.vector(output_qml$Psi_est)) + length(as.vector(output_qml$Pi_est)))]), 3)
+
+```

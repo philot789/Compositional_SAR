@@ -1,0 +1,679 @@
+---
+title: "Compositional Areal Data"
+author: "Philipp Otto"
+format: pdf
+editor: source
+---
+
+# Example Berlin
+
+```{=html}
+<!-- 
+  setwd("/Users/philippotto/Dropbox/USB_OTTO/1 - Forschung/Paper/Paper69_Compositional_SAR/Code_Data") 
+-->
+```
+## Compositional areal data
+
+### Real-world example
+
+Berlin real-estate transactions in three categories
+
+```{r}
+load("DATA_BERLIN.Rdata")
+
+total_transactions <- data_berlin$cases$unbebaute_flaeche + data_berlin$cases$bebaute_flaeche + data_berlin$cases$eigentumswohnung
+
+compositional_data <- array(, dim = c(length(data_berlin$spatial_index), length(data_berlin$timeindex), 3))
+
+compositional_data[,,1] <- data_berlin$cases$unbebaute_flaeche / ifelse(total_transactions == 0, 1, total_transactions)
+compositional_data[,,2] <- data_berlin$cases$bebaute_flaeche / ifelse(total_transactions == 0, 1, total_transactions)
+compositional_data[,,3] <- data_berlin$cases$eigentumswohnung / ifelse(total_transactions == 0, 1, total_transactions)
+
+```
+
+Bi-monthly data, each postcode region
+
+```{r}
+
+k <- 1
+plot(data_berlin$timeindex, compositional_data[k,,1], type = "l", ylim = c(0, 1), main = paste("Region k = ", k, sep = ""))
+lines(data_berlin$timeindex, apply(compositional_data[k,,1:2], 1, sum), col = "red")
+lines(data_berlin$timeindex, apply(compositional_data[k,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositional_data[k,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+```
+
+Aggregate to monthly data
+
+```{r}
+total_transactions_monthly <- total_transactions[, which(data_berlin$day == 1)] + total_transactions[, which(data_berlin$day == 15)]
+
+compositional_data_monthly <- array(, dim = c(length(data_berlin$spatial_index), (length(data_berlin$timeindex) - 1)/2, 3))
+
+compositional_data_monthly[,,1] <- (data_berlin$cases$unbebaute_flaeche[, which(data_berlin$day == 1)] + data_berlin$cases$unbebaute_flaeche[, which(data_berlin$day == 15)]) / ifelse(total_transactions_monthly == 0, 1, total_transactions_monthly)
+compositional_data_monthly[,,2] <- (data_berlin$cases$bebaute_flaeche[, which(data_berlin$day == 1)] + data_berlin$cases$bebaute_flaeche[, which(data_berlin$day == 15)]) / ifelse(total_transactions_monthly == 0, 1, total_transactions_monthly)
+compositional_data_monthly[,,3] <- (data_berlin$cases$eigentumswohnung[, which(data_berlin$day == 1)] + data_berlin$cases$eigentumswohnung[, which(data_berlin$day == 15)]) / ifelse(total_transactions_monthly == 0, 1, total_transactions_monthly)
+```
+
+```{r}
+
+k <- 3
+plot(1:240, compositional_data_monthly[k,,1], type = "l", ylim = c(0, 1), main = paste("Region k = ", k, sep = ""))
+lines(1:240, apply(compositional_data_monthly[k,,1:2], 1, sum), col = "red")
+lines(1:240, apply(compositional_data_monthly[k,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositional_data_monthly[k,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+```
+
+Aggregate to 3-digit postcode regions
+
+```{r}
+
+r_digits <- 3
+aggregate_spatial_IDs <- floor(data_berlin$spatial_index/(10^(r_digits-1)))
+total_transactions_monthly_rdigit <- t(sapply(unique(aggregate_spatial_IDs), function(x) apply(total_transactions_monthly[which(aggregate_spatial_IDs == x),, drop = FALSE], 2, sum)))
+  
+length(unique(aggregate_spatial_IDs))
+
+compositional_data_monthly_rdigit <- array(, dim = c(length(unique(aggregate_spatial_IDs)), dim(compositional_data_monthly)[2], 3))
+
+compositional_data_monthly_rdigit[,,1] <- t(sapply(unique(aggregate_spatial_IDs), function(x) apply((data_berlin$cases$unbebaute_flaeche[which(aggregate_spatial_IDs == x), which(data_berlin$day == 1), drop = FALSE] + data_berlin$cases$unbebaute_flaeche[which(aggregate_spatial_IDs == x), which(data_berlin$day == 15), drop = FALSE]), 2, sum))) / ifelse(total_transactions_monthly_rdigit == 0, 1, total_transactions_monthly_rdigit)
+compositional_data_monthly_rdigit[,,2] <- t(sapply(unique(aggregate_spatial_IDs), function(x) apply((data_berlin$cases$bebaute_flaeche[which(aggregate_spatial_IDs == x), which(data_berlin$day == 1), drop = FALSE] + data_berlin$cases$bebaute_flaeche[which(aggregate_spatial_IDs == x), which(data_berlin$day == 15), drop = FALSE]), 2, sum))) / ifelse(total_transactions_monthly_rdigit == 0, 1, total_transactions_monthly_rdigit)
+compositional_data_monthly_rdigit[,,3] <- t(sapply(unique(aggregate_spatial_IDs), function(x) apply((data_berlin$cases$eigentumswohnung[which(aggregate_spatial_IDs == x), which(data_berlin$day == 1), drop = FALSE] + data_berlin$cases$eigentumswohnung[which(aggregate_spatial_IDs == x), which(data_berlin$day == 15), drop = FALSE]), 2, sum))) / ifelse(total_transactions_monthly_rdigit == 0, 1, total_transactions_monthly_rdigit)
+
+```
+
+```{r}
+k <- 11
+plot(1:240, compositional_data_monthly_rdigit[k,,1], type = "l", ylim = c(0, 1), main = paste("Region k = ", k, sep = ""))
+lines(1:240, apply(compositional_data_monthly_rdigit[k,,1:2], 1, sum), col = "red")
+lines(1:240, apply(compositional_data_monthly_rdigit[k,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositional_data_monthly_rdigit[k,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+
+
+k <- 1
+  plot(1:240, compositional_data_monthly_rdigit[k,,1], type = "l", ylim = c(0, 1), main = paste("Region k = ", k, sep = ""))
+lines(1:240, apply(compositional_data_monthly_rdigit[k,,1:2], 1, sum), col = "red")
+lines(1:240, apply(compositional_data_monthly_rdigit[k,,1:3], 1, sum), col = "blue")
+for(k in 1:length(unique(aggregate_spatial_IDs))){
+  abline(v = which(apply(compositional_data_monthly_rdigit[k,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+}
+
+```
+
+## Some plots for the paper
+
+```{r}
+
+library("spdep")
+library("maptools")
+library("ggplot2")
+
+# gpclibPermit()
+
+year <- data_berlin$year[which(data_berlin$day == 1)]
+month <- data_berlin$month[which(data_berlin$day == 1)]
+postcode <- unique(floor(data_berlin$spatial_index/(10^(r_digits-1))))
+map <- unionSpatialPolygons(data_berlin$map, aggregate_spatial_IDs, avoidGEOS = FALSE)
+
+dates <- as.Date(paste(year,"-", month, "-", rep(1,240), sep = ""))
+
+# Load the ggtern package
+library(ggtern)
+library(classInt)
+
+find_coords <- function(x) {
+  foo <- NULL
+  for(i in 1:length(map@polygons[[x]]@Polygons)){
+    foo <- rbind(foo, map@polygons[[x]]@Polygons[[i]]@coords)
+  }
+  return(apply(foo, 2, mean))
+}
+  
+coords <- t(sapply(1:24, find_coords))
+
+colfunc <- colorRampPalette(c("white", "blue"))
+cols <- colfunc(30) # sequential_hcl(n = 30, h = 265, c = c(10, 40), l = c(90, 15), power = 1)
+q8 <- classIntervals(coords[,1], n = 20, style = "fisher")
+q8Cols_NS <- findColours(q8, cols)
+colfunc <- colorRampPalette(c("white", "red"))
+cols <- colfunc(30) # sequential_hcl(n = 30, h = 265, c = c(10, 40), l = c(90, 15), power = 1)
+q8 <- classIntervals(coords[,2], n = 20, style = "fisher")
+q8Cols_EW <- findColours(q8, cols)
+
+mixed_cols <- rgb((0.5*col2rgb(q8Cols_NS)[1,] + 0.5*col2rgb(q8Cols_EW)[1,])/255,
+                  (0.5*col2rgb(q8Cols_NS)[2,] + 0.5*col2rgb(q8Cols_EW)[2,])/255,
+                  (0.5*col2rgb(q8Cols_NS)[3,] + 0.5*col2rgb(q8Cols_EW)[3,])/255)
+
+#pdf("map_legend.pdf", 5, 5)
+plot(map, col = mixed_cols)
+points(coords[16,1], coords[16,2], lwd = 2, pch = 4, col = "green")
+points(coords[24,1], coords[24,2], lwd = 2, pch = 4, col = "yellow")
+#dev.off()
+
+
+#pdf("compositions_t1.pdf", 5, 5)
+t <- 1
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(U = compositional_data_monthly_rdigit[,t,1],
+                   D = compositional_data_monthly_rdigit[,t,2],
+                   C = compositional_data_monthly_rdigit[,t,3],
+                   ColorVar = mixed_cols)
+
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = ColorVar)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("January 1995")
+#dev.off()
+
+
+i <- 16
+postcode[i]
+
+#pdf("compositions_i16.pdf", 5, 5)
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(U = compositional_data_monthly_rdigit[i,,1],
+                   D = compositional_data_monthly_rdigit[i,,2],
+                   C = compositional_data_monthly_rdigit[i,,3],
+                   Year = year)
+
+custom_palette <- scale_color_gradient(low = "orange", high = "yellow")
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = Year)) + 
+  geom_point() +
+  custom_palette + 
+  ggtitle("Postcode area 135xx")
+#dev.off()
+
+#pdf("ts_i16.pdf", 5, 5)
+plot(dates, compositional_data_monthly_rdigit[i,,1], type = "l", ylim = c(0, 1), main = paste("Postcode area ", postcode[i], "xx", sep = ""), ylab = "Percentage (cumulative)", xlab = "Time")
+lines(dates, apply(compositional_data_monthly_rdigit[i,,1:2], 1, sum), col = "red")
+lines(dates, apply(compositional_data_monthly_rdigit[i,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositional_data_monthly_rdigit[i,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+color_ramp <- colorRampPalette(c("orange", "yellow"))
+colors <- color_ramp(20)
+points(dates, rep(0.01, 240), col = sort(rep(colors,12)))
+#dev.off()
+
+
+i <- 24
+postcode[i]
+
+#pdf("compositions_i24.pdf", 5, 5)
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(U = compositional_data_monthly_rdigit[i,,1],
+                   D = compositional_data_monthly_rdigit[i,,2],
+                   C = compositional_data_monthly_rdigit[i,,3],
+                   Year = year)
+
+custom_palette <- scale_color_gradient(low = "darkgreen", high = "green")
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = Year)) + 
+  geom_point() +
+  custom_palette + 
+  ggtitle("Postcode area 126xx")
+#dev.off()
+
+#pdf("ts_i24.pdf", 5, 5)
+plot(dates, compositional_data_monthly_rdigit[i,,1], type = "l", ylim = c(0, 1), main = paste("Postcode area ", postcode[i], "xx", sep = ""), ylab = "Percentage (cumulative)", xlab = "Time")
+lines(dates, apply(compositional_data_monthly_rdigit[i,,1:2], 1, sum), col = "red")
+lines(dates, apply(compositional_data_monthly_rdigit[i,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositional_data_monthly_rdigit[i,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+legend
+color_ramp <- colorRampPalette(c("darkgreen", "green"))
+colors <- color_ramp(20)
+points(dates, rep(0.01, 240), col = sort(rep(colors,12)))
+#dev.off()
+
+
+
+#pdf("compositions_t240.pdf", 5, 5)
+t <- 240
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(U = compositional_data_monthly_rdigit[,t,1],
+                   D = compositional_data_monthly_rdigit[,t,2],
+                   C = compositional_data_monthly_rdigit[,t,3],
+                   ColorVar = mixed_cols)
+
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = ColorVar)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("December 2014")
+#dev.off()
+
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(U = as.vector(compositional_data_monthly_rdigit[,,1]),
+                   D = as.vector(compositional_data_monthly_rdigit[,,2]),
+                   C = as.vector(compositional_data_monthly_rdigit[,,3]),
+                   Year = sort(rep(year, 24)))
+
+#pdf("compositions_allyears_by_year.pdf", 5, 5)
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = Year)) + 
+  geom_point() +
+  ggtitle("All years")
+#dev.off()
+
+comp_dataframe <- data.frame(U = as.vector(compositional_data_monthly_rdigit[,,1]),
+                   D = as.vector(compositional_data_monthly_rdigit[,,2]),
+                   C = as.vector(compositional_data_monthly_rdigit[,,3]),
+                   Year = rep(mixed_cols, 240))
+
+#pdf("compositions_allyears_by_location.pdf", 5, 5)
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = U, y = D, z = C, color = Year)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("All years")
+#dev.off()
+
+
+```
+
+## Code to share dataset
+
+```{r}
+
+library("spdep")
+library("maptools")
+
+# gpclibPermit()
+
+year <- data_berlin$year[which(data_berlin$day == 1)]
+month <- data_berlin$month[which(data_berlin$day == 1)]
+postcode <- unique(floor(data_berlin$spatial_index/(10^(r_digits-1))))
+map <- unionSpatialPolygons(data_berlin$map, aggregate_spatial_IDs, avoidGEOS = FALSE)
+
+save(compositional_data_monthly_rdigit, year, month, postcode, map, file = "Compositional_Data_Berlin.Rda") # n x T x components
+
+# load("Compositional_Data_Berlin.Rda")
+
+```
+
+## ILR Transformation
+
+```{r}
+
+library("compositions")
+
+dim(compositional_data_monthly_rdigit)
+sum(is.na(compositional_data_monthly_rdigit))
+sum(compositional_data_monthly_rdigit == 0)
+
+compositional_data_monthly_rdigit <- compositional_data_monthly_rdigit[,,c(3,1,2)]
+
+ilr_compositional_data_monthly_rdigit <- apply(compositional_data_monthly_rdigit, c(1,2), ilr, ilrBase(D = 3, method = "balanced"))
+
+sum(is.na(ilr_compositional_data_monthly_rdigit))
+dim(ilr_compositional_data_monthly_rdigit)
+```
+
+## QML
+
+### Functions needed for estimation
+
+```{r}
+
+
+source("Functions.R")
+
+```
+
+### Estimation
+
+```{r}
+
+library("Rsolnp")
+library("Matrix")
+
+dim(ilr_compositional_data_monthly_rdigit)
+Y_ilr <- aperm(ilr_compositional_data_monthly_rdigit, c(2,1,3)) # change order of dimensions of array to use it in qml function
+dim(Y_ilr)
+
+colfunc <- colorRampPalette(c("white", "blue"))
+cols <- colfunc(30) # sequential_hcl(n = 30, h = 265, c = c(10, 40), l = c(90, 15), power = 1)
+q8 <- classIntervals(apply(Y_ilr[,1,], 1, mean), n = 20, style = "fisher")
+q8Cols <- findColours(q8, cols)
+plot(map, col = q8Cols)
+
+plot(1:dim(Y_ilr)[3], Y_ilr[6,1,], type = "l")
+
+# W <- ifelse(1/2 * abs(cor(t(Y_ilr[,1,]))) + 1/2 * abs(cor(t(Y_ilr[,2,]))) > 0.25, 1, 0)
+# W <- W / array(apply(W, 1, sum), dim = c(24,24))
+# diag(W) <- 0
+
+W <- nb2mat(poly2nb(map), style = "W")
+
+# W <- nb2mat(knn2nb(knearneigh(coords, k = 3)), style = "W")
+
+# critical.threshold <- max(unlist(nbdists(knn2nb(knearneigh(coords, k = 4)),coords)))
+# nb.dist.band <- dnearneigh(coords, 0, critical.threshold)
+# distances <- nbdists(nb.dist.band,coords)
+# invd1 <- lapply(distances, function(x) (1/x))
+# W <- listw2mat(nb2listw(nb.dist.band,glist = invd1, style = "W"))
+  
+X <- array(1, dim = c(24, 2, 240, 1))
+#X[,,,2] <- aperm(array(rep(c(0,1,0,0,0,0,0,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,3] <- aperm(array(rep(c(0,0,1,0,0,0,0,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,4] <- aperm(array(rep(c(0,0,0,1,0,0,0,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,5] <- aperm(array(rep(c(0,0,0,0,1,0,0,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,6] <- aperm(array(rep(c(0,0,0,0,0,1,0,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,7] <- aperm(array(rep(c(0,0,0,0,0,0,1,0,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,8] <- aperm(array(rep(c(0,0,0,0,0,0,0,1,0,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,9] <- aperm(array(rep(c(0,0,0,0,0,0,0,0,1,0,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,10] <- aperm(array(rep(c(0,0,0,0,0,0,0,0,0,1,0,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,11] <- aperm(array(rep(c(0,0,0,0,0,0,0,0,0,0,1,0),20), dim = c(240,2,24)), c(3,2,1))
+#X[,,,12] <- aperm(array(rep(c(0,0,0,0,0,0,0,0,0,0,0,1),20), dim = c(240,2,24)), c(3,2,1))
+
+
+output_qml <- qml_spatiotemporal_multivariate_p(Y_ilr, W, X) # needs n x p x t
+
+stderr <- sqrt(diag(solve(output_qml$H)))
+
+cbind(round(as.vector(output_qml$Beta_est), 3),
+round(stderr[1:length(as.vector(output_qml$Beta_est))], 3),
+round(as.vector(output_qml$Beta_est) / stderr[1:length(as.vector(output_qml$Beta_est))], 3))
+
+cbind(round(as.vector(output_qml$Psi_est), 3),
+round(stderr[(length(as.vector(output_qml$Beta_est))+1):(length(as.vector(output_qml$Beta_est))+4)], 3),
+round(as.vector(output_qml$Psi_est) / stderr[(length(as.vector(output_qml$Beta_est))+1):(length(as.vector(output_qml$Beta_est))+4)], 3))
+
+cbind(round(as.vector(output_qml$Pi_est), 3),
+round(stderr[(length(as.vector(output_qml$Beta_est))+5):(length(as.vector(output_qml$Beta_est))+8)], 3),
+round(as.vector(output_qml$Pi_est) / stderr[(length(as.vector(output_qml$Beta_est))+5):(length(as.vector(output_qml$Beta_est))+8)], 3))
+
+cbind(round(output_qml$sig_u_est, 3),
+round(stderr[length(stderr)], 3),
+round(as.vector(output_qml$sig_u_est) / stderr[length(stderr)], 3))
+
+
+plot(output_qml$residuals)
+
+ilrInv(output_qml$Beta_est, ilrBase(D = 3, method = "balanced"))
+
+round(output_qml$Psi_est, 3)
+ilrInv(diag(output_qml$Psi_est), ilrBase(D = 3, method = "balanced")) # ???
+
+
+ilrInv(diag(output_qml$Pi_est), ilrBase(D = 3, method = "balanced"))
+
+ilrInv(output_qml$Psi_est[1,]) # ??
+ilrInv(output_qml$Psi_est[2,]) # ??
+ilrInv(output_qml$Psi_est[,1]) # ??
+ilrInv(output_qml$Psi_est[,2]) # ??
+
+round(output_qml$Pi_est, 3)
+
+round(output_qml$sig_u_est, 3)
+
+```
+
+# Example Spain
+
+```{r}
+
+
+load("SpainEcoComposition.Rdata")
+
+# new <- reshape(dats, idvar = "ï..NAME", timevar = "YEAR", direction = "wide")
+
+IDs <- unique(eco.comp$municipality)
+Times <- sort(unique(eco.comp$year))
+Sectors <- unique(eco.comp$sector)
+
+array_data <- array(NA, dim = c(length(IDs), length(Times), length(Sectors)))
+
+for(i in IDs){
+  for(j in Times){
+    for(k in Sectors){
+      if(length(which(eco.comp$municipality == i & eco.comp$year == j & eco.comp$sector == k)) != 1){
+        next
+      }
+      array_data[which(IDs == i), which(Times == j), which(Sectors == k)] <- eco.comp[which(eco.comp$municipality == i & eco.comp$year == j & eco.comp$sector == k),]$sector.prop
+    }
+  }
+  cat(round(which(IDs == i) / 2793, 3), " ")
+}
+
+# totals <- apply(array_data, c(1,2), sum)
+
+compositions_spain <- array_data # array_data / array(totals, dim = c(length(IDs), length(Times), length(Sectors)))
+
+coords <- array(NA, dim = c(length(IDs), 2))
+for(i in IDs){
+  ind <- which(eco.comp$municipality == i)[1]
+  coords[which(IDs == i), ] <- as.numeric(c(eco.comp[ind,]$Lat, eco.comp[ind,]$Long))
+  # cat(round(which(IDs == i) / 6334, 3), " ")
+}
+
+
+
+```
+
+## Some graphics for the paper
+
+```{r}
+
+
+
+library("spdep")
+library("maptools")
+
+# Load the ggtern package
+library(ggtern)
+library(classInt)
+
+
+colfunc <- colorRampPalette(c("white", "blue"))
+cols <- colfunc(30) # sequential_hcl(n = 30, h = 265, c = c(10, 40), l = c(90, 15), power = 1)
+q8 <- classIntervals(coords[,1], n = 20, style = "fisher")
+q8Cols_NS <- findColours(q8, cols)
+colfunc <- colorRampPalette(c("white", "red"))
+cols <- colfunc(30) # sequential_hcl(n = 30, h = 265, c = c(10, 40), l = c(90, 15), power = 1)
+q8 <- classIntervals(coords[,2], n = 20, style = "fisher")
+q8Cols_EW <- findColours(q8, cols)
+
+mixed_cols <- rgb((0.5*col2rgb(q8Cols_NS)[1,] + 0.5*col2rgb(q8Cols_EW)[1,])/255,
+                  (0.5*col2rgb(q8Cols_NS)[2,] + 0.5*col2rgb(q8Cols_EW)[2,])/255,
+                  (0.5*col2rgb(q8Cols_NS)[3,] + 0.5*col2rgb(q8Cols_EW)[3,])/255)
+
+pdf("map_legend_spain.pdf", 5, 5)
+plot(coords[,1], coords[,2], col = mixed_cols)
+points(coords[16,1], coords[16,2], lwd = 2, pch = 4, col = "green")
+points(coords[500,1], coords[500,2], lwd = 2, pch = 4, col = "yellow")
+dev.off()
+
+
+compositions_spain
+
+pdf("compositions_t1_spain.pdf", 5, 5)
+t <- 1
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(I = compositions_spain[,t,1],
+                   C = compositions_spain[,t,2],
+                   S = compositions_spain[,t,3],
+                   ColorVar = mixed_cols)
+
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = ColorVar)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("2012")
+dev.off()
+
+
+i <- 16
+IDs[16]
+pdf("compositions_i16_spain.pdf", 5, 5)
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(I = compositions_spain[i,,1],
+                   C = compositions_spain[i,,2],
+                   S = compositions_spain[i,,3],
+                   Year = Times)
+
+custom_palette <- scale_color_gradient(low = "orange", high = "yellow")
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = Year)) + 
+  geom_point() +
+  custom_palette + 
+  ggtitle("Agurain/Salvatierra")
+dev.off()
+
+
+pdf("ts_i16_spain.pdf", 5, 5)
+plot(Times, compositions_spain[i,,1], type = "l", ylim = c(0, 1), main = paste("Region ", IDs[i], sep = ""), ylab = "Percentage (cumulative)", xlab = "Time")
+lines(Times, apply(compositions_spain[i,,1:2], 1, sum), col = "red")
+lines(Times, apply(compositions_spain[i,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositions_spain[i,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+color_ramp <- colorRampPalette(c("orange", "yellow"))
+colors <- color_ramp(10)
+points(Times, rep(0.01, 10), col = sort(rep(colors,1)))
+dev.off()
+
+
+i <- 500
+IDs[i]
+
+pdf("compositions_i500_spain.pdf", 5, 5)
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(I = compositions_spain[i,,1],
+                   C = compositions_spain[i,,2],
+                   S = compositions_spain[i,,3],
+                   Year = Times)
+
+custom_palette <- scale_color_gradient(low = "darkgreen", high = "green")
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = Year)) + 
+  geom_point() +
+  custom_palette + 
+  ggtitle("Torella")
+dev.off()
+
+pdf("ts_i500_spain.pdf", 5, 5)
+plot(Times, compositions_spain[i,,1], type = "l", ylim = c(0, 1), main = paste("Region ", IDs[i], sep = ""), ylab = "Percentage (cumulative)", xlab = "Time")
+lines(Times, apply(compositions_spain[i,,1:2], 1, sum), col = "red")
+lines(Times, apply(compositions_spain[i,,1:3], 1, sum), col = "blue")
+abline(v = which(apply(compositions_spain[i,,1:3], 1, sum) == 0), lwd = 3, col = "grey")
+color_ramp <- colorRampPalette(c("darkgreen", "green"))
+colors <- color_ramp(10)
+points(Times, rep(0.01, 10), col = sort(rep(colors,1)))
+dev.off()
+
+
+
+pdf("compositions_t10_spain.pdf", 5, 5)
+t <- 10
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(I = compositions_spain[,t,1],
+                   C = compositions_spain[,t,2],
+                   S = compositions_spain[,t,3],
+                   ColorVar = mixed_cols)
+
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = ColorVar)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("2021")
+dev.off()
+
+# Create a sample data frame with three compositional parts
+comp_dataframe <- data.frame(I = as.vector(compositions_spain[,,1]),
+                   C = as.vector(compositions_spain[,,2]),
+                   S = as.vector(compositions_spain[,,3]),
+                   Year = sort(rep(Times, 2793)))
+
+pdf("compositions_allyears_by_year_spain.pdf", 5, 5)
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = Year)) + 
+  geom_point() +
+  ggtitle("All years")
+dev.off()
+
+comp_dataframe <- data.frame(I = as.vector(compositions_spain[,,1]),
+                   C = as.vector(compositions_spain[,,2]),
+                   S = as.vector(compositions_spain[,,3]),
+                   Year = rep(mixed_cols, 10))
+
+pdf("compositions_allyears_by_location_spain.pdf", 5, 5)
+# Create a ternary plot
+ggtern(comp_dataframe, aes(x = I, y = C, z = S, color = Year)) + 
+  scale_color_identity() +
+  geom_point() +
+  ggtitle("All years")
+dev.off()
+
+
+```
+
+## Estimation
+
+```{r}
+
+
+dim(compositions_spain)
+
+compositions_spain_ilr <- compositions_spain_ilr[,,c(3,2,1)]
+
+V <- ilrBase(D = 3, method = "balanced")
+compositions_spain_ilr <- apply(compositions_spain, c(1,2), ilr, V = V)
+
+dim(compositions_spain_ilr)
+Y_ilr <- aperm(compositions_spain_ilr, c(2,1,3)) # change order of dimensions of array to use it in qml function
+dim(Y_ilr) # should be: n, p, t
+
+# 1
+library("Matrix")
+library("codep")
+
+dist.mat <- as.matrix(dist(coords))
+# dist.mat <- as.matrix(gcd.slc(coords))
+W <- Matrix(dist.mat < 0.23, sparse = TRUE)
+# W <- Matrix(dist.mat < 0.05, sparse = TRUE)
+# image(W)
+rowsum <- Matrix(array(apply(W, 1, sum), dim = c(dim(Y_ilr)[1], dim(Y_ilr)[1])), sparse = TRUE)
+W <- W / rowsum
+diag(W) <- 0
+sum(W == 0) / prod(dim(W))
+sum(W == 0) / (sum(W == 0) + sum(W != 0))
+mean(apply(W, 1, function(x) sum(x>0)))
+image(W)
+
+X <- array(1, dim = c(2793, 2, 10, 1))
+
+output_qml_spain <- qml_spatiotemporal_multivariate_p(Y_ilr, W, X) # needs n x p x t
+
+stderr <- sqrt(diag(solve(output_qml_spain$H)))
+
+cbind(round(as.vector(output_qml_spain$Beta_est), 3),
+round(stderr[1:2], 3),
+round(as.vector(output_qml_spain$Beta_est) / stderr[1:2], 3))
+
+cbind(round(as.vector(output_qml_spain$Psi_est), 3),
+round(stderr[3:6], 3),
+round(as.vector(output_qml_spain$Psi_est) / stderr[3:6], 3))
+
+cbind(round(as.vector(output_qml_spain$Pi_est), 3),
+round(stderr[7:10], 3),
+round(as.vector(output_qml_spain$Pi_est) / stderr[7:10], 3))
+
+cbind(round(output_qml_spain$sig_u_est, 3),
+round(stderr[11], 3),
+round(as.vector(output_qml_spain$sig_u_est) / stderr[11], 3))
+
+
+output_qml_spain$Beta_est
+ilrInv(output_qml_spain$Beta_est)
+
+output_qml_spain$Psi_est
+ilrInv(diag(output_qml_spain$Psi_est)) # ???
+ilrInv(output_qml_spain$Psi_est[1,]) # ??
+ilrInv(output_qml_spain$Psi_est[2,]) # ??
+ilrInv(output_qml_spain$Psi_est[,1]) # ??
+ilrInv(output_qml_spain$Psi_est[,2]) # ??
+
+output_qml_spain$Pi_est
+
+output_qml_spain$sig_u_est
+
+
+```
